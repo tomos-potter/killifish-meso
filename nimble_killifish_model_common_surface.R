@@ -266,8 +266,4 @@ inits <- list(
   
 )
 
-# tidy up
-rm(le.comp.KO, le.comp.LP, le.focal.KOKO, le.focal.KOLP, le.focal.LPKO, le.focal.LPLP,
-   block.num, both.pheno, chan.num, density.KO, density.LP, drain.num, fec, growth, i,
-   initial.length, initial.length.squ, j, k, KO, length.cen, LP, n_block, n_chan, n_drain,
-   n_obs, off.length, prob.repro, stage, surv)
+
