@@ -116,7 +116,7 @@ summary(mod) # compare with parameter estimates from NIMBLE model for fecundity
 params <- c('g.beta','f.beta','d.beta',
             'philength.LP','philength.KO' ,
             'rholength.LP','rholength.KO',
-            'g.sigma','d.sigma', 'g.sigma.int.c')
+            'g.sigma','d.sigma', 'g.sigma.int.c')#, 'g.alpha.channel')
 
 ni <- 1200000
 nb <-  200000
@@ -135,17 +135,17 @@ Cmodel <- compileNimble(Rmodel,showCompilerOutput = TRUE)
 Cmcmc <- compileNimble(Rmcmc, project = Rmodel,showCompilerOutput = TRUE)
 
 set.seed(0)
-samples_full_naranjo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt, nchains = nc)
+samples_full_naranjo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt,
+                                nchains = nc, WAIC = TRUE)
 
 # plots of posteriors and trace to check convergence etc
 MCMCtrace(samples_full_naranjo$samples, 
           params = params, pdf=F, ind = T, Rhat = T, n.eff = T)
 
 # summary of parameter estimates
-samplesSummary(samples_full_naranjo$samples[[1]])
+samplesSummary(samples_full_naranjo$chain1)
 
-# get WAIC
-samples_full_naranjo$WAIC
+calculateWAIC(samples_full_naranjo$chain1, Rmodel)
 
 save(samples_full_naranjo, file="samples_full_naranjo.Rda")
 
@@ -161,8 +161,8 @@ Cmodel <- compileNimble(Rmodel,showCompilerOutput = TRUE)
 Cmcmc <- compileNimble(Rmcmc, project = Rmodel,showCompilerOutput = TRUE)
 
 set.seed(0)
-samples_full_guanapo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt, nchains = nc)
-
+samples_full_guanapo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt,
+                                nchains = nc, WAIC = TRUE)
 # plots of posteriors and trace to check convergence etc
 MCMCtrace(samples_full_guanapo$samples, 
           params = params, pdf=F, ind = T, Rhat = T, n.eff = T)
@@ -171,7 +171,7 @@ MCMCtrace(samples_full_guanapo$samples,
 samplesSummary(samples_full_guanapo$samples[[1]])
 
 # get WAIC
-samples_full_guanapo$WAIC
+calculateWAIC(samples_full_guanapo$chain1, model=Cmodel)
 
 save(samples_full_guanapo, file="samples_full_guanapo.Rda")
 
@@ -252,7 +252,8 @@ Cmodel <- compileNimble(Rmodel,showCompilerOutput = TRUE)
 Cmcmc <- compileNimble(Rmcmc, project = Rmodel,showCompilerOutput = TRUE)
 
 set.seed(0)
-samples_common_naranjo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt, nchains = nc)
+samples_common_naranjo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt, 
+                                  nchains = nc, WAIC = TRUE)
 
 # plots of posteriors and trace to check convergence etc
 MCMCtrace(samples_common_naranjo$samples, 
@@ -278,7 +279,8 @@ Cmodel <- compileNimble(Rmodel,showCompilerOutput = TRUE)
 Cmcmc <- compileNimble(Rmcmc, project = Rmodel,showCompilerOutput = TRUE)
 
 set.seed(0)
-samples_common_guanapo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt, nchains = nc)
+samples_common_guanapo <- runMCMC(Cmcmc, niter = ni, nburnin = nb, thin = nt,
+                                  nchains = nc, WAIC = TRUE)
 
 # plots of posteriors and trace to check convergence etc
 MCMCtrace(samples_common_guanapo$samples, 

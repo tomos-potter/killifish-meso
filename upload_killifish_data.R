@@ -83,7 +83,7 @@ data <- data[order(data$channel.id,data$initial.total.length),]
 
 data <- data[which(data$initial.fish==1),c('experiment','drainage','block','channel','channel.id','density','initial.fish','analysis.use','died.early',
                                            'final.sex','color.combo','riv.pheno','growth','survival','recap.total.length','pregnant','num.embryos',
-                                           'stage','off.length','survival','initial.total.length','e1','e2','exper')]
+                                           'stage','off.length','survival','initial.total.length','e1','e2','exper', 'riv.density', 'riv.size.structure')]
 
 #Create KO and LP columns. These will get used as dummy variables
 data$KO <- 0
@@ -100,7 +100,7 @@ data[which(data$drainage==unique(data$drainage)[2]), 'drain.num'] <- 2
 
 #Create gdata, which will be the data set that ultimately gets analyzed
 touse <- which( is.na(data$died.early)==TRUE  )
-gdata <- data[touse,c('exper','drain.num','channel.id','block','final.sex','growth','num.embryos','pregnant','off.length','stage','survival','initial.total.length','KO','LP')]
+gdata <- data[touse,c('exper','drain.num','channel.id','block','final.sex','growth','num.embryos','pregnant','off.length','stage','survival','initial.total.length','KO','LP', 'riv.density', 'riv.size.structure')]
 
 #Create a unique number for each channel
 for (i in unique(gdata$channel.id)){
@@ -125,7 +125,10 @@ gdata$both.pheno <- 0
 gdata[which(gdata$density.KO>0 & gdata$density.LP>0),'both.pheno'] <- 1
 
 
-gdata <- gdata[,c('exper','drain.num','block','final.sex','growth','num.embryos','pregnant','off.length','stage','survival','density.LP','density.KO','initial.total.length','channel.num','KO','LP','both.pheno')]
+gdata <- gdata[,c('exper','drain.num','block','final.sex','growth',
+                  'num.embryos','pregnant','off.length','stage',
+                  'survival','density.LP','density.KO','initial.total.length',
+                  'channel.num','KO','LP','both.pheno', 'riv.density', 'riv.size.structure')]
 
 
 #Not used for killifish
