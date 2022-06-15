@@ -99,7 +99,7 @@ gdata[which(is.na(gdata$fec)==TRUE & gdata$final.sex=='F'),'fec'] <- 0
 #check growth model
 mod <- glmmTMB(growth ~ 0 + pheno + pheno:initial.total.length.cen + 
              pheno:initial.total.length.cen.squ + pheno:density + (1|channel.num),
-           data=gdata)
+           data=gdata[final.sex!="M",])
 
 summary(mod) # compare with parameter estimates from NIMBLE model for growth
 
@@ -143,7 +143,7 @@ MCMCtrace(samples_full_naranjo$samples,
           params = params, pdf=F, ind = T, Rhat = T, n.eff = T)
 
 # summary of parameter estimates
-samplesSummary(samples_full_naranjo$chain1)
+samplesSummary(samples_full_naranjo$samples$chain1)
 
 calculateWAIC(samples_full_naranjo$chain1, Rmodel)
 

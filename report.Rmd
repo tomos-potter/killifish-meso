@@ -1,0 +1,484 @@
+---
+title: "Killifish mesocosm report"
+author: "Tomos Potter"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+load("samples_null_guanapo.Rda")
+load("samples_null_naranjo.Rda")
+load("samples_full_guanapo.Rda")
+load("samples_full_naranjo.Rda")
+load("samples_common_guanapo.Rda")
+load("samples_common_naranjo.Rda")
+library(Rcpp)
+library(devtools)
+require(nimble)
+library(plyr)
+library(MCMCvis)
+library(ggplot2)
+library(data.table)
+library(knitr)
+source('upload_killifish_data.R')
+
+
+```
+
+
+### Background
+This project looks at the effects of size-mediated density-dependence on two distinct ecotypeS of Hart’s killifish, *Rivulus hartii*. The killifish-only (KO) ecotype is adapted to living in the absence of other fish species. The low-predation ecotype (LP) is adapted to living with one other fish species, the Trinidadian guppy. Guppies and killifish engage in intra-guild predation: while juvenile killifish and guppies compete for similar food resources, adult killifish eat guppies, and adult guppies eat killifish eggs and neonates.
+
+Here, we consider the effects of intraspecific competition on KO and LP killifish, i.e. in the absence of guppies. We ran experiments where we manipulated the population density and population size-structure of killifish in artificial streams (mesocosms). We collected data on size, growth, fecundity, and offspring size for each fish in the experiment. Each mesocosm contained killifish from a single population (i.e. KO or LP) at either low density (6 fish standard size distribution), high density (12 fish, standard size distribution), large size structure (9 fish, distribution with large mean), or small size structure (9 fish, distribution with small mean). We replicated the study across two (putatively) independent origins of the KO/LP ecotypes: the Guanapo river and the Naranjo river.
+
+### Aims
+
+The aims of the project are to determine whether size-mediated intraspecific density-dependence differs between KO and LP killifish. The end goal is to use population-specific integral projection models (IPMs) to project population structure at equilibrium. We can use perturbation analyses to determine whether the effects of density differ between populations, in terms of the magitude, direction, and target of density-dependent effects. For example, we can ask whether the effects of density operate more strongly on growth, fecundity, or offspring size, whether this differs between populations, and whether these differences result in different carrying capacities, size-structures, or whether they alter the distribution of size-specific reproductive values (i.e. which size classes contribute most to population growth).
+
+We have an *a priori* expectation that KO killifish are better adapted to high intraspecific population densities (as they live at higher natural densities than LP killifish). Some reasonable predictions are:
+
+* fitness in KO populations is less sensitive to increases in density 
+* carrying capacity is higher in KO populations
+* LP populations should have higher fitness at low densities (i.e. the density-independent terms in vital rate models should be greater)
+
+### This document
+
+Here, I give an overview of the analyses so far. In the following sections I:
+
+1. show some plots of the data and report sample sizes
+2. describe the vital rates models and the alpha surface calculations that define the size-mediated nature of density dependence
+3. show the results of initial model selection for vital rates models
+4. run the diagnostic plots for the Monte Carlo Markov chains, to assess whether our model fitting process has done a decent job
+5. plot and compare demographic rate parameters between KO/LP
+6. seek help
+
+
+N.B. I do not fit the models in this RMarkdown documet - if I did, it would take days to render each time. Instead I load the saved posterior distributions from the model runs.
+
+All of the code and data to run the analyses (and write this document) are in the GitHub repo: https://github.com/tomos-potter/killifish-meso
+
+## 1. The data
+
+Here are some basic plots of the three main vital rates (growth, fecundity, offspring size) as functions of initial total body size. Plots are shown for each treatment and population, and by drainage. Note that for the analyses the crucial sample size is that within each population (i.e. across all treatments within a population) - these are provided after each of the data plots.
+
+
+```{r, echo=FALSE}
+
+gdata <- upload_killifish_data("both")
+gdata <- as.data.table(gdata)
+
+gdata$ecotype <- ifelse(gdata$KO==1, "KO", "LP")
+gdata$drain <- ifelse(gdata$drain.num==1, "guanapo", "naranjo")
+gdata$treatment <- ifelse(gdata$riv.density==6, "density:low", 
+                          ifelse(gdata$riv.density==12, "density:high", 
+                                 ifelse(gdata$riv.size.structure=="large", "size structure:large", "size structure: small")))
+
+```
+
+### Growth data by treatment and population, for each drainage
+
+```{r growth_data, echo=FALSE, warning = FALSE, message = FALSE}
+
+
+ggplot(gdata[drain=="guanapo" & final.sex!="M",], aes(x=initial.total.length, y=growth,
+                  colour = ecotype))+
+  labs(title="Guanapo", 
+       x= "Initial total length (mm)",
+       y = "Growth (mm)")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+ggplot(gdata[drain=="naranjo" & final.sex!="M",], aes(x=initial.total.length, y=growth,
+                  colour = ecotype))+
+  labs(title="Naranjo", 
+       x= "Initial total length (mm)",
+       y = "Growth (mm)")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+```
+
+**Sample sizes of growth data**
+
+
+```{r, echo=FALSE}
+kable(gdata[!is.na(growth), table(drain, ecotype)])
+```
+
+### Fecundity data by treatment and population, for each drainage
+
+```{r fec_data, echo=FALSE, warning = FALSE, message = FALSE}
+ggplot(gdata[drain=="guanapo" & final.sex=="F",], aes(x=initial.total.length, y=num.embryos,
+                  colour = ecotype))+
+  labs(title="Guanapo", 
+       x= "Initial total length (mm)",
+       y = "Number of eggs")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+ggplot(gdata[drain=="naranjo" & final.sex=="F",], aes(x=initial.total.length, y=num.embryos,
+                  colour = ecotype))+
+  labs(title="Naranjo", 
+       x= "Initial total length (mm)",
+       y = "Number of eggs")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+```
+
+**Sample sizes of fecundity data**
+
+```{r, echo=FALSE}
+kable(gdata[!is.na(num.embryos), table(drain, ecotype)])
+```
+
+
+### Offspring size data by treatment and population, for each drainage
+
+```{r offsize_data, echo=FALSE, warning = FALSE, message = FALSE}
+
+ggplot(gdata[drain=="guanapo",], aes(x=initial.total.length, y=off.length,
+                  colour = ecotype))+
+  labs(title="Guanapo", 
+       x= "Initial total length (mm)",
+       y = "Mean offspring length (mm)")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+ggplot(gdata[drain=="naranjo",], aes(x=initial.total.length, y=off.length,
+                  colour = ecotype))+
+  labs(title="Naranjo", 
+       x= "Initial total length (mm)",
+       y = "Mean offspring length (mm)")+
+  geom_point()+
+  #ylim(c(-1, 12.5))+
+  xlim(c(10,85))+
+  facet_wrap(~treatment)+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+```
+
+**Sample sizes of offspring size data**
+
+
+```{r, echo=FALSE}
+t<- gdata[!is.na(off.length), table(drain, ecotype)]
+kable(t)
+```
+
+N.B. We have quite a few individuals with non-zero fecundity but no measure of offspring length - I guess this is from the inclusion of immature eggs in the fecundity count, but with no corresponding estimated lengths?
+
+e.g. compare with the count of non-zero fecundity (particularly for LP in Naranjo):
+
+```{r missing_off_length, echo=FALSE}
+kable(gdata[num.embryos>0, table(drain, ecotype)])
+```
+
+
+## 2. The vital rates models
+
+We use generalised linear mixed-effects models (GLMMs) to describe the vital rate functions for growth, fecundity, and offspring size. The vital rates are modelled as functions of the size of the focal individual, and of the number and size of its competitors. 
+
+The linearised forms of each of the vital rates are:
+
+$$ growth = \beta{_0{_g}} + \beta{_z{_g}}z +\beta{_z{_g^2}}z^2 + \beta_{N{_g}}N_{i,j}$$
+$$ fecudity = \beta{_0{_f}} + \beta{_z{_f}}z  + \beta_{N{_f}}N_{i,j}$$
+ $$ offspring \space size = \beta{_0{_d}} + \beta{_z{_d}}z + \beta_{N{_d}}N_{i,j}$$
+
+Where the $\beta$ terms are parameters, $z$ is (size), and $N_{i,j}$ is the interaction surface, i.e. the number of competitors $j$ expressed in terms relative to the size of the focal individual $i$. The interaction surface is given by:
+
+$$ N_{i,j} = \sum e^{\theta (x-z)} e^{-{\frac{\rho (x-z)^2}{2H^2}} } $$
+Where the first term on the RHS ($e^{\theta (x-z)}$) describes the number of competitors of size $x$ relative to the size of the focal individual $z$, given the size-dependent competitive scaling parameter $\phi$. When $\phi = 0$, competitive ability is independent of size, and this term becomes equal to the absolute number of competitors. When $\phi>0$, competitive ability increases with body size such that smaller individuals within a population experience greater relative population densities, i.e. larger values of $N_{i,j}$. 
+
+The second term on the RHS ($e^{-{\frac{\rho (x-z)^2}{2H^2}}}$) describes how the degree of niche overlap between the focal individual and its competitors, as determined by focal size $z$, competitor size $x$, the niche overlap coefficient $\rho$, and the niche width value $H$ (which we set equal to 1). When $\rho > 0$, niche overlap decreases with increasing difference in size between the focal individual and its competitors.
+
+### Fitting the models
+
+We fit population-specific models for all vital rates simultaneously, in a Bayesian framework using the `NIMBLE` package. 
+
+In our experiments, the number and size of competitors is set as an experimental treatment within each mesocosm, i.e. competition terms reflect competitive interactions among individuals within a mesocosm. The interaction surface parameters are estimated across mesocosms, and we assume that $N_{i,j}$ is common for an individual across all three vital rates. We ran the analyses independently for each of the drainages. 
+
+For each model, we ran four MCMC chains yielding a total of 4000 samples of the posterior distribution.
+
+## 3. Initial model selection
+
+For the first stage of model selection, we want to determine the degree of support for:
+
+1. the null model, assuming classical density dependence (i.e. $\phi=0, \rho=0$)
+2. the common model, assuming shared values of $\phi$ and $\rho$ among populations
+3. the full model, assuming population-specific values of $\phi$ and $\rho$
+
+To do this, we compared the WAIC scores of these three models in each drainage:
+
+```{r, echo=FALSE}
+
+# write a table extracting the model WAIC scores
+waics <- data.table(model = c("null", "common", "full"),
+                    AIC_guanapo = c(samples_null_guanapo$WAIC$WAIC,
+                                    samples_common_guanapo$WAIC$WAIC,
+                                    samples_full_guanapo$WAIC$WAIC),
+                    AIC_naranjo = c(samples_null_naranjo$WAIC$WAIC,
+                                    samples_common_naranjo$WAIC$WAIC,
+                                    samples_full_naranjo$WAIC$WAIC))
+# print the table to the doc
+kable(waics, digits=0 )
+```
+
+So on the first pass the full model gives the best fit (lowest WAIC scores), in both drainages.
+
+## 4. Model diagnostics
+
+Lets take a look at the posterior distributions and sampling traces of the parameters from the full models, for each drainage.
+
+We want to see nice mixing and convergence of the chains (e.g. Rhat scores should be = 1, but Rhat < 1.05 probably acceptable, effective samples sizes > 200 probably acceptable), and hopefully relatively un-skewed posterior distributions. 
+
+The parameter names are a bit abstract in these plots, but I will fix that later. We just want to get a general impression of what is going on. For now, parameters as follows:  
+
+Growth parameters $\beta_g$: 
+
++ g.beta[1:4] are for KO 
++ g.beta[5:8] are for LP
+
+Fecundity parameters $\beta_f$:
+
++ f.beta[1:3] are for KO
++ f.beta[4:6] are for LP
+
+Offspring size parameters $\beta_d$:
+
++ d.beta[1:3] are for KO
++ d.beta[4:6] are for LP
+
+### Guanapo full model: trace and posterior
+```{r g_model_diagnostics, echo=FALSE}
+
+# specify the parameters to plot
+params <- c('g.beta','f.beta','d.beta',
+            'philength.LP','philength.KO' ,
+            'rholength.LP','rholength.KO',
+            'g.sigma','d.sigma', 'g.sigma.int.c')
+
+# plot the trace and posterior of the chains
+MCMCtrace(samples_full_guanapo$samples, 
+          params = params, pdf=F, ind = T, Rhat = T, n.eff = T)
+
+
+```
+**Summary for Guanapo full model**
+
+Pretty good, except for the LP surface parameters $\phi$ and $\rho$, which have dodgy looking posteriors and Rhat values >= 1.05, and effective samples sizes < 200. Low effective sample size suggests autocorrelation of the MCMC for these parameters, which could potentially be fixed by longer runs. We will leave it for now, but lets take a look at the parameters side by side for KO and LP, for each of the vital rates and the competition terms.
+
+
+### Naranjo full model: trace and posterior
+```{r n_model_diagnostics, echo=FALSE}
+
+params <- c('g.beta','f.beta','d.beta',
+            'philength.LP','philength.KO' ,
+            'rholength.LP','rholength.KO',
+            'g.sigma','d.sigma', 'g.sigma.int.c')
+
+MCMCtrace(samples_full_naranjo$samples, 
+          params = params, pdf=F, ind = T, Rhat = T, n.eff = T)
+
+
+```
+
+**Summary for Naranjo full model**
+
+This looks much better. All parameter estimates have Rhat <= 1.01, and effective sample sizes >200.  
+
+
+## 5. Comparing KO vs LP vital rate parameters between drainages
+
+Here is where things get odd. Below I plot the parameter posteriors for each vital rate, with KO in pink and LP in blue. For growth and the surface parameters, the relative position of the parameter estimates seems to perfectly flip between drainages! e.g. if the pink is left of the blue in Guanapo, it is right of the blue in Naranjo etc. This would appear to be a data mix up (i.e. wrong classification of ecotype), but I can't seem to find where it might have happened, PLUS - the swapping effect is not apparent in the fecundity parameters... Take a look and see what you think.
+
+### Growth parameters, KO vs LP, by drainage
+
+```{r long_post_functions, echo=FALSE, message=FALSE}
+library(tidyverse)
+# These are some functions for turning the posterior samples into useable dataframes for plotting
+
+long_samples <- function(model){
+  
+  # combine samples from all chains
+    samples <- as.data.frame(rbind(model$samples$chain1,
+                                   model$samples$chain2,
+                                   model$samples$chain3,
+                                   model$samples$chain4))
+    
+    # excuse the gross code below to extract the interesting parameters
+    samples <- samples[, c("g.beta[1]", "g.beta[2]", "g.beta[3]", "g.beta[4]",
+                           "g.beta[5]", "g.beta[6]", "g.beta[7]", "g.beta[8]",
+                           "f.beta[1]", "f.beta[2]", "f.beta[3]",
+                           "f.beta[4]", "f.beta[5]", "f.beta[6]",
+                           "d.beta[1]", "d.beta[2]", "d.beta[3]",
+                           "d.beta[4]", "d.beta[5]", "d.beta[6]",
+                           "philength.KO", "philength.LP", "rholength.KO", "rholength.LP") ]
+  
+  samples$it <- c(1:dim(samples)[1])
+  
+  #pivot into long format
+  samples <- pivot_longer(samples, 
+                          cols=1:dim(samples)[2]-1, 
+                          names_to = "Parameter")
+  
+  # specifiy which are KO parameters
+  KO_params <- list("g.beta[1]", "g.beta[2]", "g.beta[3]", "g.beta[4]",
+                 "f.beta[1]", "f.beta[2]", "f.beta[3]", 
+                 "d.beta[1]", "d.beta[2]", "d.beta[3]",
+                 "philength.KO", "rholength.KO")
+  
+  # # specify which are universal parameters
+  # both_params <- list("H", "sigma", "d.sigma")
+  # 
+  # classify parameters by population
+  samples$ecotype <- ifelse(samples$Parameter %in% KO_params, "KO", "LP")
+
+   # classify parameters by vital rate
+  samples$vrate <- ifelse(substr(samples$Parameter, 1,1)=="g", "growth",
+                          ifelse(substr(samples$Parameter, 1,1)=="f", "fecundity",
+                                 ifelse(substr(samples$Parameter, 1,1)=="d", "offsize","surface")))
+  # name parameters
+  samples$coef <- ifelse(samples$Parameter == "g.beta[1]" | samples$Parameter == "g.beta[5]", "b0_growth",
+                  ifelse(samples$Parameter == "g.beta[2]" | samples$Parameter == "g.beta[6]", "bz_growth",
+                  ifelse(samples$Parameter == "g.beta[3]" | samples$Parameter == "g.beta[7]", "bz2_growth",
+                  ifelse(samples$Parameter == "g.beta[4]" | samples$Parameter == "g.beta[8]", "bN_growth",
+                  ifelse(samples$Parameter == "f.beta[1]" | samples$Parameter == "f.beta[4]", "b0_fec", 
+                  ifelse(samples$Parameter == "f.beta[2]" | samples$Parameter == "f.beta[5]", "bz_fec",
+                  ifelse(samples$Parameter == "f.beta[3]" | samples$Parameter == "f.beta[6]", "bN_fec",
+                  ifelse(samples$Parameter == "d.beta[1]" | samples$Parameter == "d.beta[4]", "b0_offsize",
+                  ifelse(samples$Parameter == "d.beta[2]" | samples$Parameter == "d.beta[5]", "bz_offsize",
+                  ifelse(samples$Parameter == "d.beta[3]" | samples$Parameter == "d.beta[6]", "bN_offsize",
+                  ifelse(samples$Parameter == "philength.KO" | samples$Parameter=="philength.LP", "phi",
+                  ifelse(samples$Parameter == "rholength.KO" | samples$Parameter=="rholength.LP", "rho",
+                                
+                                       samples$Parameter))))))))))))
+                              
+  samples <- as.data.table(samples)
+  
+  return(samples)
+    
+}
+
+guanapo_long <- long_samples(samples_full_guanapo)
+
+naranjo_long <- long_samples(samples_full_naranjo)
+
+ggplot(guanapo_long[vrate=="growth",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  labs(title = "Growth: Guanapo") +
+  #xlim(c(0,0.15))+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+ggplot(naranjo_long[vrate=="growth",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  labs(title = "Growth: Naranjo") +
+  #xlim(c(0,0.15))+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+```
+
+#### Summary
+
+It seems that the Naranjo stream follows from the predictions: the LP killifish have a larger intercept $\beta_0$, indicating rapid growth at small sizes and low density, but are also more susceptible to the negative effects of density $\beta_N$. In contrast, the KO killifish experiences a *positive* effect of population density $\beta_N$, which is quite surprising. What is more surprising is that these effects are reversed in the Guanapo: LP killifish have smaller intercepts and and a positive effect of population density. I'm not sure what is going on here. Furthermore, in the Guanapo LP, the size effects ($\beta_z$, $\beta_z^2$) are statistically indistinguishable from zero, which must be bullshit. My bet is that this is a product of the weird estimates of the surface paramaters $\phi$ and $\rho$ for these LP fish (see below). This makes me worry that our modelling approach does not partition density-dependent and density-independent effects adequately. It could also be that we should work in log units for size and growth.
+
+
+### Fecundity parameters, KO vs LP, by drainage
+
+```{r, echo=FALSE}
+ggplot(guanapo_long[vrate=="fecundity",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Fecundity: Guanapo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+ggplot(naranjo_long[vrate=="fecundity",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Fecundity: Naranjo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+```
+
+#### Summary
+
+Here at least we do not see the switching-between-drainages effect. But - the predictions are kind of the opposite to what we might expect. The intercept for fecundity is greater in KO, indicating a higher baseline fecundity than in LP, and LP are less affected by density than KO - this is the opposite to what Matt shows in his work in the common garden experiments, where LP have higher fecundity at high food, and lower at low food.  
+
+
+### Offspring size parameters, KO vs LP, by drainage
+
+```{r, echo =FALSE}
+ggplot(guanapo_long[vrate=="offsize",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Offspring size: Guanapo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+ggplot(naranjo_long[vrate=="offsize",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Offspring size: Naranjo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+```
+
+#### Summary
+
+I think offspring size is probably a key bit of this, but I don't think we have sufficient offspring size data to test it properly. I should probably drop the competition surface from this vital rate to simplify the model, and just model offspring size as a simple function of parent size.
+
+
+### Surface parameters, KO vs LP, by drainage
+
+```{r, echo =FALSE}
+ggplot(guanapo_long[vrate=="surface",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Surface: Guanapo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+ggplot(naranjo_long[vrate=="surface",], 
+       aes(x=value, color=ecotype, fill=ecotype)) +
+  geom_density(alpha=0.4)+
+  #xlim(c(0,0.15))+
+  labs(title = "Surface: Naranjo")+
+  theme_minimal() +facet_wrap(~coef, scales="free")
+
+```
+
+
+#### Summary
+Back to the world of weird switching-between-drainage effects. It strikes me that the surface parameters are estimated with much less certainty in LP than in KO, which could reflect more within-population variation in competitive scaling in LP populations, but hey, n=2, so I will hold my horses there. 
+
+It is possible that setting $\rho=0$ for the Guanapo LP might fix things - there is little support for its value, and uncertainty in $\rho$ propagates into the other model parameters. I will give it a go.
+
+
+
+
